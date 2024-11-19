@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 20px;
+        }
+        #videoElement {
+            width: 80%;
+            height: auto;
+            border: 1px solid #ddd;
+        }
+        #recordButton {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            color: white;
+            background-color: red;
+            border: none;
+            cursor: pointer;
+        }
+        #recordButton:active {
+            background-color: darkred;
+        }
+    </style>
+</head>
+<body>
+<h1>Real-Time Video Stream</h1>
+<video id="videoElement" autoplay></video>
+<br>
+<button id="recordButton">Start Recording</button>
+
+<script>
+    const videoElement = document.getElementById('videoElement');
+    const recordButton = document.getElementById('recordButton');
+    let mediaStream;
+    let webSocket;
+
+    // Получаем доступ к камере пользователя
+    async function getUserMedia() {
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            videoElement.srcObject = mediaStream;
+        } catch (err) {
+            console.error('Error accessing the camera: ', err);
+        }
+    }
+
+    // Устанавливаем WebSocket-соединение с сервером
+    function setupWebSocket() {
+        webSocket = new WebSocket('ws://localhost:8080/stream');
+        webSocket.onopen = () => {
+            console.log('Connected to the server');
+        };
+        webSocket.onclose = () => {
+            console.log('Disconnected from the server');
+        };
+        webSocket.onerror = (err) => {
+            console.error('WebSocket error: ', err);
+        };
+    }
+
+    // Отправляем видеопоток через WebSocket
+    function sendStream() {
+        const videoTrack = mediaStream.getVideoTracks()[0];
+        const imageCapture = new ImageCapture(videoTrack);
+
+        function captureFrame() {
+            imageCapture.grabFrame()
+                .then(imageBitmap => {
+                    // Преобразуем изображение в бинарный формат
+                    const canvas = document.createElement('canvas');
+                    canvas.width = imageBitmap.width;
+                    canvas.height = imageBitmap.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(imageBitmap, 0, 0);
+                    canvas.toBlob(blob => {
+                        if (webSocket.readyState === WebSocket.OPEN) {
+                            webSocket.send(blob);
+                        }
+                    }, 'image/jpeg');
+                })
+                .catch(err => console.error('Error capturing frame: ', err));
+        }
+
+        // Отправляем кадры каждую 1/30 секунды
+        const captureInterval = setInterval(captureFrame, 1000 / 30);
+
+        // Останавливаем отправку при закрытии WebSocket или остановке записи
+        webSocket.onclose = () => clearInterval(captureInterval);
+    }
+
+    // Логика кнопки записи
+    recordButton.onclick = () => {
+        if (recordButton.textContent === 'Start Recording') {
+            recordButton.textContent = 'Stop Recording';
+            setupWebSocket();
+            sendStream();
+        } else {
+            recordButton.textContent = 'Start Recording';
+            if (webSocket) {
+                webSocket.close();
+            }
+        }
+    };
+
+    // Инициализация
+    getUserMedia();
+</script>
+</body>
+</html>

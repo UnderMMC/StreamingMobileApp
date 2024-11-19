@@ -54,6 +54,10 @@ func (a *App) Run() {
 	serv := service.NewService(repo)
 	a.serv = serv
 
+	// Обработка статических файлов
+	fs := http.FileServer(http.Dir("./static"))
+	http.Handle("/", fs)
+
 	http.HandleFunc("/stream", a.GetStream)
 
 	// Запуск сервера на порту 8080
